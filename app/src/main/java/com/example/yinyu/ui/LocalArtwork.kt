@@ -156,7 +156,7 @@ private fun circularDistance(first: Int, second: Int, count: Int): Int {
     return minOf(raw, count - raw)
 }
 
-private fun loadArtwork(context: Context, imageUri: Uri?, audioUri: Uri?): Bitmap? {
+internal fun loadArtwork(context: Context, imageUri: Uri?, audioUri: Uri?): Bitmap? {
     if (imageUri != null) {
         try {
             context.contentResolver.openInputStream(imageUri)?.use { stream ->

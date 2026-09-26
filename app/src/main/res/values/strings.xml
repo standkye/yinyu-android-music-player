@@ -1,3 +1,9 @@
 <resources>
     <string name="app_name">音屿</string>
+    <string name="notification_channel_playback">音乐播放</string>
+    <string name="notification_channel_playback_description">显示正在播放的歌曲与播放控制</string>
+    <string name="media3_controls_play_description">播放</string>
+    <string name="media3_controls_pause_description">暂停</string>
+    <string name="media3_controls_seek_to_previous_description">上一首</string>
+    <string name="media3_controls_seek_to_next_description">下一首</string>
 </resources>

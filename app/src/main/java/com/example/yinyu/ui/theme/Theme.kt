@@ -62,15 +62,16 @@ object YinColors {
 fun YinYuTheme(
     darkMode: Boolean = true,
     accentIndex: Int = 0,
+    blackMode: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val accent = YinAccent.values().getOrElse(accentIndex.coerceIn(0, YinAccent.values().lastIndex)) { YinAccent.LAVENDER }
     val palette = if (darkMode) {
         YinPalette(
             isLight = false,
-            background = Color(0xFF17151D),
-            surface = Color(0xFF24212B),
-            elevated = Color(0xFF302B38),
+            background = if (blackMode) Color.Black else Color(0xFF17151D),
+            surface = if (blackMode) Color(0xFF080808) else Color(0xFF24212B),
+            elevated = if (blackMode) Color(0xFF151515) else Color(0xFF302B38),
             text = Color(0xFFF6F2FA),
             muted = Color(0xFFB8B1C1),
             accent = accent.color,

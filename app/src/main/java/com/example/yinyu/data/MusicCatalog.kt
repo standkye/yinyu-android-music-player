@@ -44,21 +44,21 @@ internal class MusicCatalog(private val context: Context) {
         return context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
     }
 
-    suspend fun scan(): ScanResult = withContext(Dispatchers.IO) {
+    suspend fun scan(minDurationSeconds: Int = 0): ScanResult = withContext(Dispatchers.IO) {
         val tree = selectedTree()
         if (tree != null) {
             try {
-                return@withContext scanTree(tree)
+                return@withContext scanTree(tree, minDurationSeconds)
             } catch (_: SecurityException) {
                 useMediaStore()
             } catch (_: IllegalArgumentException) {
                 useMediaStore()
             }
         }
-        if (hasMediaPermission()) scanMediaStore() else ScanResult(emptyList())
+        if (hasMediaPermission()) scanMediaStore(minDurationSeconds) else ScanResult(emptyList())
     }
 
-    private fun scanMediaStore(): ScanResult {
+    private fun scanMediaStore(minDurationSeconds: Int): ScanResult {
         val base = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
         val columns = mutableListOf(
             MediaStore.Audio.Media._ID,
@@ -75,8 +75,8 @@ internal class MusicCatalog(private val context: Context) {
         resolver.query(
             base,
             columns.toTypedArray(),
-            "${MediaStore.Audio.Media.DURATION} > 0",
-            null,
+            "${MediaStore.Audio.Media.DURATION} > 0 AND ${MediaStore.Audio.Media.DURATION} >= ?",
+            arrayOf((minDurationSeconds.coerceAtLeast(0) * 1_000L).toString()),
             "${MediaStore.Audio.Media.DATE_ADDED} DESC",
         )?.use { cursor ->
             fun value(column: String): String? = cursor.getColumnIndex(column).takeIf { it >= 0 }
@@ -119,7 +119,7 @@ internal class MusicCatalog(private val context: Context) {
         val baseName: String get() = name.substringBeforeLast('.').lowercase(Locale.ROOT)
     }
 
-    private fun scanTree(tree: Uri): ScanResult {
+    private fun scanTree(tree: Uri, minDurationSeconds: Int): ScanResult {
         val files = mutableListOf<Entry>()
         val rootId = DocumentsContract.getTreeDocumentId(tree)
         fun walk(parentId: String, path: List<String>, depth: Int) {
@@ -212,7 +212,11 @@ internal class MusicCatalog(private val context: Context) {
                     format = file.name.substringAfterLast('.', "").uppercase(Locale.ROOT),
                 )
             }.sortedBy { it.title.lowercase(Locale.ROOT) }.toList()
-        return ScanResult(songs, artistPictures, "所选音乐文件夹")
+        return ScanResult(
+            songs.filter { it.durationSeconds >= minDurationSeconds.coerceAtLeast(0) },
+            artistPictures,
+            "所选音乐文件夹",
+        )
     }
 
     private fun cleanMetadata(raw: String?): String? = raw?.trim()

@@ -33,8 +33,10 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -125,30 +127,43 @@ internal fun AddToPlaylistOverlay(playlists: List<SavedPlaylist>, onClose: () ->
 @Composable
 internal fun SettingsScreen(
     sourceName: String,
-    isDark: Boolean,
+    themeMode: Int,
     accentIndex: Int,
-    onThemeChange: (Boolean) -> Unit,
+    notificationsEnabled: Boolean,
+    minimumTrackDurationSeconds: Int,
+    sleepTimerMinutes: Int,
+    volumePercent: Int,
+    playbackSpeedPercent: Int,
+    librarySortOrder: Int,
+    lyricsAutoFollow: Boolean,
+    lyricsTextSize: Int,
+    onThemeChange: (Int) -> Unit,
     onAccentChange: (Int) -> Unit,
+    onManageNotifications: () -> Unit,
+    onMinimumDurationChange: (Int) -> Unit,
+    onSleepTimerChange: (Int) -> Unit,
+    onVolumeChange: (Int) -> Unit,
+    onPlaybackSpeedChange: (Int) -> Unit,
+    onLibrarySortChange: (Int) -> Unit,
+    onLyricsAutoFollowChange: (Boolean) -> Unit,
+    onLyricsTextSizeChange: (Int) -> Unit,
     onClose: () -> Unit,
     onChooseFolder: () -> Unit,
     onMediaStore: () -> Unit,
 ) {
-    OverlayShell("设置", "外观与本地音乐", onClose) {
+    OverlayShell("设置", "按你的聆听习惯整理音屿", onClose) {
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp).padding(bottom = 26.dp),
-            verticalArrangement = Arrangement.spacedBy(22.dp),
+            verticalArrangement = Arrangement.spacedBy(19.dp),
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(11.dp)) {
-                SettingSectionHeading("外观", "选择你喜欢的明暗风格")
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    AppearanceChoice("深色", Icons.Default.DarkMode, selected = isDark, Modifier.weight(1f)) { onThemeChange(true) }
-                    AppearanceChoice("浅色", Icons.Default.LightMode, selected = !isDark, Modifier.weight(1f)) { onThemeChange(false) }
+            SettingsGroup("外观与个性", "延续 Retro Music 的多主题与强调色思路") {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AppearanceChoice("浅色", Icons.Default.LightMode, selected = themeMode == 1, Modifier.weight(1f)) { onThemeChange(1) }
+                    AppearanceChoice("深色", Icons.Default.DarkMode, selected = themeMode == 0, Modifier.weight(1f)) { onThemeChange(0) }
+                    AppearanceChoice("纯黑", Icons.Default.DarkMode, selected = themeMode == 2, Modifier.weight(1f)) { onThemeChange(2) }
                 }
-            }
-
-            Column(verticalArrangement = Arrangement.spacedBy(11.dp)) {
-                SettingSectionHeading("主题色", "像封面一样，为播放器选一种氛围")
+                SettingSectionHeading("强调色", "用于播放控件、进度与选中状态")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     YinAccent.values().forEachIndexed { index, accent ->
                         AccentChoice(accent, selected = index == accentIndex, Modifier.weight(1f)) { onAccentChange(index) }
@@ -156,21 +171,127 @@ internal fun SettingsScreen(
                 }
             }
 
-            Column(verticalArrangement = Arrangement.spacedBy(11.dp)) {
-                SettingSectionHeading("本地曲库", sourceName)
+            SettingsGroup("本地曲库", "$sourceName · 歌曲筛选会立即重新扫描") {
                 SettingChoice(Icons.Default.FolderOpen, "选择音乐文件夹",
-                    "读取音频、专辑封面、歌手图片和同名 LRC 歌词", onChooseFolder)
+                    "读取音频、封面、歌手图片和同名 LRC 歌词", onChooseFolder)
                 SettingChoice(Icons.Default.MusicNote, "扫描手机媒体库",
                     "从 Android 本地媒体库重新载入歌曲", onMediaStore)
+                SettingSectionHeading("忽略短音频", "适合排除提示音与不完整文件")
+                SettingsOptions(
+                    options = listOf(0 to "不过滤", 30 to "30 秒", 60 to "1 分钟"),
+                    selected = minimumTrackDurationSeconds,
+                    onSelect = onMinimumDurationChange,
+                )
+                SettingSectionHeading("默认歌曲排序", "曲库歌曲列表和专辑内曲目共用此顺序")
+                SettingsOptions(
+                    options = listOf(0 to "名称", 1 to "最近加入", 2 to "时长"),
+                    selected = librarySortOrder,
+                    onSelect = onLibrarySortChange,
+                )
             }
 
-            Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                SettingSectionHeading("播放", "本机播放 · 无账号")
-                Text(
-                    "后台播放、锁屏与通知栏控制由 Android 媒体会话提供。插拔耳机时会自动暂停。",
-                    color = YinColors.muted, fontSize = 12.sp, lineHeight = 19.sp,
-                    modifier = Modifier.padding(horizontal = 2.dp),
+            SettingsGroup("歌词显示", "按你的阅读习惯调整同步歌词") {
+                SettingSectionHeading("歌词自动跟随", "关闭后可自由滚动浏览，点击歌词仍可跳转播放")
+                SettingsOptions(
+                    options = listOf(0 to "手动", 1 to "自动跟随"),
+                    selected = if (lyricsAutoFollow) 1 else 0,
+                    onSelect = { onLyricsAutoFollowChange(it == 1) },
                 )
+                SettingSectionHeading("歌词字号", "立即应用到全屏歌词页面")
+                SettingsOptions(
+                    options = listOf(0 to "小", 1 to "标准", 2 to "大"),
+                    selected = lyricsTextSize,
+                    onSelect = onLyricsTextSizeChange,
+                )
+            }
+
+            SettingsGroup("播放辅助", "本地播放 · 锁屏控制 · 自动暂停") {
+                SettingSectionHeading("播放速度", "只影响音频播放，不修改原文件")
+                SettingsOptions(
+                    options = listOf(75 to "0.75×", 100 to "1.0×", 125 to "1.25×", 150 to "1.5×"),
+                    selected = playbackSpeedPercent,
+                    onSelect = onPlaybackSpeedChange,
+                )
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    SettingSectionHeading("播放器音量", "独立于手机媒体音量")
+                    Spacer(Modifier.weight(1f))
+                    Text("$volumePercent%", color = YinColors.lavender, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
+                Slider(
+                    value = volumePercent / 100f,
+                    onValueChange = { onVolumeChange((it * 100).toInt()) },
+                    valueRange = 0f..1f,
+                    steps = 9,
+                )
+                SettingSectionHeading(
+                    "睡眠定时器",
+                    if (sleepTimerMinutes > 0) "已开启 · $sleepTimerMinutes 分钟后暂停" else "设定停止播放的时间",
+                )
+                SettingsOptions(
+                    options = listOf(0 to "关闭", 15 to "15 分钟", 30 to "30 分钟", 60 to "60 分钟"),
+                    selected = sleepTimerMinutes,
+                    onSelect = onSleepTimerChange,
+                )
+                Text(
+                    "耳机拔出时自动暂停。播放队列与随机、循环控制仍由播放器统一管理。",
+                    color = YinColors.muted, fontSize = 12.sp, lineHeight = 18.sp,
+                )
+            }
+
+            SettingsGroup("通知与锁屏", "控制系统媒体卡片是否可见") {
+                SettingChoice(
+                    Icons.Default.NotificationsActive,
+                    if (notificationsEnabled) "通知已开启" else "开启播放通知",
+                    if (notificationsEnabled) "可在系统设置中调整音屿的通知频道" else "首次播放会申请权限；也可以前往系统通知设置开启",
+                    onManageNotifications,
+                )
+                Text(
+                    "媒体通知由 Android 系统绘制，包含封面、歌曲信息、上一首、播放/暂停和下一首。",
+                    color = YinColors.muted, fontSize = 12.sp, lineHeight = 18.sp,
+                )
+            }
+
+            SettingsGroup("关于音屿", "版本 1.0.0 · 完全本地 · 无广告") {
+                Text(
+                    "音乐文件、封面与歌词只从你授权的手机文件夹或本地媒体库读取。\n\n原创代码采用 GPL-3.0-only；第三方依赖和素材遵循各自许可。",
+                    color = YinColors.muted, fontSize = 12.sp, lineHeight = 18.sp,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsGroup(title: String, subtitle: String, content: @Composable () -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(23.dp))
+            .background(YinColors.surface).border(.8.dp, YinColors.outline, RoundedCornerShape(23.dp))
+            .padding(15.dp),
+        verticalArrangement = Arrangement.spacedBy(13.dp),
+    ) {
+        SettingSectionHeading(title, subtitle)
+        content()
+    }
+}
+
+@Composable
+private fun SettingsOptions(
+    options: List<Pair<Int, String>>,
+    selected: Int,
+    onSelect: (Int) -> Unit,
+) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+        options.forEach { (value, label) ->
+            val chosen = selected == value
+            Box(
+                Modifier.weight(1f).clip(RoundedCornerShape(14.dp))
+                    .background(if (chosen) YinColors.lavender.copy(alpha = .18f) else YinColors.elevated.copy(alpha = .72f))
+                    .border(1.dp, if (chosen) YinColors.lavender.copy(alpha = .55f) else YinColors.outline, RoundedCornerShape(14.dp))
+                    .clickable { onSelect(value) }.padding(horizontal = 5.dp, vertical = 11.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(label, color = if (chosen) YinColors.text else YinColors.muted, fontSize = 11.sp,
+                    fontWeight = if (chosen) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1)
             }
         }
     }

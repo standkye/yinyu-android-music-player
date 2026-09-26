@@ -169,6 +169,8 @@ internal fun LyricsOverlay(
     positionMs: Long,
     progress: Float,
     playing: Boolean,
+    autoFollow: Boolean,
+    textScale: Float,
     onClose: () -> Unit,
     onToggle: () -> Unit,
     onPrevious: () -> Unit,
@@ -180,8 +182,10 @@ internal fun LyricsOverlay(
     val artworkPalette = rememberArtworkPalette(song)
     val current = lines.indexOfLast { it.atMs <= positionMs }.coerceAtLeast(0)
     val listState = rememberLazyListState()
-    LaunchedEffect(current, lines.size) {
-        if (lines.isNotEmpty()) listState.animateScrollToItem(current.coerceIn(0, lines.lastIndex), scrollOffset = -360)
+    LaunchedEffect(current, lines.size, autoFollow) {
+        if (autoFollow && lines.isNotEmpty()) {
+            listState.animateScrollToItem(current.coerceIn(0, lines.lastIndex), scrollOffset = -360)
+        }
     }
     Box(Modifier.fillMaxSize().zIndex(12f)) {
         ArtworkAmbientBackground(artworkPalette, Modifier.fillMaxSize())
@@ -202,24 +206,7 @@ internal fun LyricsOverlay(
                 }
             }
 
-            Spacer(Modifier.height(20.dp))
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 19.dp).shadow(16.dp, RoundedCornerShape(25.dp))
-                    .clip(RoundedCornerShape(25.dp))
-                    .background(YinColors.surface.copy(alpha = if (YinColors.isLight) .80f else .74f))
-                    .border(1.dp, YinColors.outline, RoundedCornerShape(25.dp))
-                    .padding(11.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                SongArtwork(song, Modifier.size(54.dp).clip(RoundedCornerShape(17.dp)), "${song.album} 封面", ContentScale.Crop)
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(song.title, color = YinColors.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Spacer(Modifier.height(3.dp))
-                    Text(song.artist, color = YinColors.muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-            }
+            Spacer(Modifier.height(8.dp))
 
             if (lines.isEmpty()) {
                 Box(Modifier.weight(1f).fillMaxWidth().padding(28.dp), contentAlignment = Alignment.Center) {
@@ -247,8 +234,8 @@ internal fun LyricsOverlay(
                             spring(dampingRatio = .82f, stiffness = 240f), label = "lyric-emphasis")
                         Text(line.text,
                             color = if (active) YinColors.text else YinColors.muted.copy(alpha = emphasis),
-                            fontSize = if (active) 25.sp else 18.sp,
-                            lineHeight = if (active) 34.sp else 27.sp,
+                            fontSize = (if (active) 25f else 18f).times(textScale).sp,
+                            lineHeight = (if (active) 34f else 27f).times(textScale).sp,
                             fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                             modifier = Modifier.fillMaxWidth().animateContentSize(spring(dampingRatio = .82f, stiffness = 260f))

@@ -124,6 +124,15 @@ Kotlin, Jetpack Compose, Material 3, AndroidX Media3 ExoPlayer, MediaSessionServ
 
 ---
 
+## 开源许可 · Open-source license
+
+- **简体中文：**音屿原创代码采用 GNU GPL v3（SPDX：`GPL-3.0-only`），完整条款见 [`LICENSE`](LICENSE)。再发布本项目或其衍生版本时，请遵守 GPL v3 的条款。第三方依赖和素材仍按各自许可使用。
+- **English:** YinYu's original code is licensed under GNU GPL v3 (SPDX: `GPL-3.0-only`). See [`LICENSE`](LICENSE) for the full terms. Redistributions and derivative works must comply with GPL v3. Third-party dependencies and assets remain under their respective licenses.
+- **日本語：**音屿のオリジナルコードは GNU GPL v3（SPDX：`GPL-3.0-only`）で公開しています。全文は [`LICENSE`](LICENSE) をご覧ください。再配布や派生物には GPL v3 の条件が適用されます。サードパーティの依存関係と素材は、それぞれのライセンスに従います。
+- **한국어:** YinYu의 자체 코드는 GNU GPL v3(SPDX: `GPL-3.0-only`)에 따라 공개됩니다. 전체 내용은 [`LICENSE`](LICENSE)에서 확인하세요. 재배포 및 파생물은 GPL v3 조건을 따라야 합니다. 서드파티 의존성과 에셋은 각자의 라이선스를 따릅니다.
+
+---
+
 ## 日本語
 
 音屿（YinYu）は、Android スマートフォン向けのオフライン音楽プレーヤーです。端末内の音楽だけをスキャンして再生します。アカウント、インターネット接続、広告は必要ありません。

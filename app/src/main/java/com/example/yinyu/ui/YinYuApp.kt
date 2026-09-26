@@ -1,9 +1,12 @@
 package com.example.yinyu.ui
 
 import android.Manifest
+import android.app.NotificationManager
 import android.content.Context
+import android.content.Intent
 import android.app.Activity
 import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -123,6 +126,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -140,6 +146,17 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.core.view.WindowCompat
 
+private const val PLAYBACK_NOTIFICATION_CHANNEL_ID = "yinyu_media_playback_v2"
+
+private fun playbackNotificationsEnabled(context: Context): Boolean {
+    if (Build.VERSION.SDK_INT >= 33 &&
+        context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+    ) return false
+    val manager = context.getSystemService(NotificationManager::class.java) ?: return false
+    if (!manager.areNotificationsEnabled()) return false
+    return manager.getNotificationChannel(PLAYBACK_NOTIFICATION_CHANNEL_ID)?.importance != NotificationManager.IMPORTANCE_NONE
+}
+
 @Composable
 fun YinYuApp() {
     val context = LocalContext.current
@@ -156,8 +173,47 @@ fun YinYuApp() {
     var folderSelectionCanceled by remember { mutableStateOf(false) }
     val sourcePreferences = remember { context.getSharedPreferences("music_source", Context.MODE_PRIVATE) }
     val appearancePreferences = remember { context.getSharedPreferences("music_appearance", Context.MODE_PRIVATE) }
-    var darkTheme by rememberSaveable { mutableStateOf(appearancePreferences.getBoolean("dark_theme", true)) }
+    val libraryPreferences = remember { context.getSharedPreferences("music_library", Context.MODE_PRIVATE) }
+    val lyricsPreferences = remember { context.getSharedPreferences("music_lyrics", Context.MODE_PRIVATE) }
+    var librarySortOrder by rememberSaveable { mutableIntStateOf(libraryPreferences.getInt("sort_order", 0).coerceIn(0, 2)) }
+    var lyricsAutoFollow by rememberSaveable { mutableStateOf(lyricsPreferences.getBoolean("auto_follow", true)) }
+    var lyricsTextSize by rememberSaveable { mutableIntStateOf(lyricsPreferences.getInt("text_size", 1).coerceIn(0, 2)) }
+    var themeMode by rememberSaveable {
+        mutableIntStateOf(appearancePreferences.getInt(
+            "theme_mode",
+            if (appearancePreferences.getBoolean("dark_theme", true)) 0 else 1,
+        ).coerceIn(0, 2))
+    }
+    val darkTheme = themeMode != 1
     var accentIndex by rememberSaveable { mutableIntStateOf(appearancePreferences.getInt("accent_index", 0).coerceIn(0, YinAccent.values().lastIndex)) }
+    val notificationPreferences = remember { context.getSharedPreferences("music_notifications", Context.MODE_PRIVATE) }
+    var notificationsEnabled by remember { mutableStateOf(playbackNotificationsEnabled(context)) }
+    var pendingPlayAfterPermission by remember { mutableStateOf<(() -> Unit)?>(null) }
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { _ ->
+        notificationsEnabled = playbackNotificationsEnabled(context)
+        val pending = pendingPlayAfterPermission
+        pendingPlayAfterPermission = null
+        pending?.invoke()
+    }
+    val requestOrPlay: ((() -> Unit) -> Unit) = { action ->
+        val hasRuntimePermission = Build.VERSION.SDK_INT < 33 ||
+            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (Build.VERSION.SDK_INT >= 33 && !hasRuntimePermission &&
+            !notificationPreferences.getBoolean("permission_prompted", false)
+        ) {
+            notificationPreferences.edit().putBoolean("permission_prompted", true).apply()
+            pendingPlayAfterPermission = action
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else action()
+    }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) notificationsEnabled = playbackNotificationsEnabled(context)
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     val dockHaze = remember { HazeState() }
     val fullTransition = remember { Animatable(0f) }
     val songs = music.songs
@@ -214,7 +270,7 @@ fun YinYuApp() {
     }
 
     val view = LocalView.current
-    YinYuTheme(darkMode = darkTheme, accentIndex = accentIndex) {
+    YinYuTheme(darkMode = darkTheme, accentIndex = accentIndex, blackMode = themeMode == 2) {
     SideEffect {
         (view.context as? Activity)?.window?.let { window ->
             WindowCompat.getInsetsController(window, view).apply {
@@ -238,8 +294,12 @@ fun YinYuApp() {
                         compactHeight = compactHeight,
                         onSearch = { searchOpen = true },
                         onOpenPlayer = { if (songs.isEmpty()) folderPicker.launch(null) else fullScreen = true },
-                        onToggle = music::togglePlayback,
-                        onSelectSong = { music.play(it); fullScreen = true },
+                        onToggle = {
+                            if (songs.isEmpty()) folderPicker.launch(null)
+                            else if (music.playing) music.togglePlayback()
+                            else requestOrPlay(music::togglePlayback)
+                        },
+                        onSelectSong = { index -> requestOrPlay { music.play(index); fullScreen = true } },
                         onChooseFolder = { folderPicker.launch(null) },
                         onLibrary = { page = 1 },
                         onPlaylist = { page = 2 },
@@ -250,8 +310,13 @@ fun YinYuApp() {
                         artists = artists,
                         sourceName = music.sourceName,
                         scanning = music.scanning,
+                        sortOrder = librarySortOrder,
+                        onSortOrderChange = { selected ->
+                            librarySortOrder = selected
+                            libraryPreferences.edit().putInt("sort_order", selected).apply()
+                        },
                         onSearch = { searchOpen = true },
-                        onSelectSong = { music.play(it); fullScreen = true },
+                        onSelectSong = { index -> requestOrPlay { music.play(index); fullScreen = true } },
                         onChooseFolder = { folderPicker.launch(null) },
                         onRescan = { music.scan() },
                         onSettings = { settingsOpen = true },
@@ -261,7 +326,7 @@ fun YinYuApp() {
                         favorites = music.favorites,
                         playlists = music.playlists,
                         onLibrary = { page = 1 },
-                        onSelectSong = { items, index -> music.playQueue(items, index); fullScreen = true },
+                        onSelectSong = { items, index -> requestOrPlay { music.playQueue(items, index); fullScreen = true } },
                         onCreatePlaylist = music::createPlaylist,
                         onDeletePlaylist = music::deletePlaylist,
                         onRemoveSong = music::removeFromPlaylist,
@@ -277,7 +342,11 @@ fun YinYuApp() {
             page = page,
             hazeState = dockHaze,
             onPage = { page = it; fullScreen = false },
-            onToggle = { if (songs.isEmpty()) folderPicker.launch(null) else music.togglePlayback() },
+            onToggle = {
+                if (songs.isEmpty()) folderPicker.launch(null)
+                else if (music.playing) music.togglePlayback()
+                else requestOrPlay(music::togglePlayback)
+            },
             onExpand = { if (songs.isEmpty()) folderPicker.launch(null) else fullScreen = true },
             onFullScreen = { if (songs.isEmpty()) folderPicker.launch(null) else fullScreen = true },
             modifier = Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars).zIndex(5f)
@@ -295,7 +364,7 @@ fun YinYuApp() {
                 repeatMode = music.repeatMode,
                 transition = fullTransition.value,
                 onCollapse = { fullScreen = false },
-                onToggle = music::togglePlayback,
+                onToggle = { if (music.playing) music.togglePlayback() else requestOrPlay(music::togglePlayback) },
                 onPrevious = music::previous,
                 onNext = music::next,
                 onSeek = music::seekTo,
@@ -314,20 +383,26 @@ fun YinYuApp() {
                 songs = songs,
                 onClose = { searchOpen = false },
                 onSelectSong = {
-                    music.play(it)
-                    searchOpen = false
-                    fullScreen = true
+                    requestOrPlay {
+                        music.play(it)
+                        searchOpen = false
+                        fullScreen = true
+                    }
                 },
             )
         }
-        if (queueOpen) QueueOverlay(music.queueSongs, music.currentQueueIndex, { queueOpen = false }) { music.playFromQueue(it) }
+        if (queueOpen) QueueOverlay(music.queueSongs, music.currentQueueIndex, { queueOpen = false }) {
+            requestOrPlay { music.playFromQueue(it) }
+        }
         if (lyricsOpen) LyricsOverlay(
             song = song,
             positionMs = music.positionMs,
             progress = music.progress,
             playing = music.playing,
+            autoFollow = lyricsAutoFollow,
+            textScale = when (lyricsTextSize) { 0 -> .88f; 2 -> 1.16f; else -> 1f },
             onClose = { lyricsOpen = false },
-            onToggle = music::togglePlayback,
+            onToggle = { if (music.playing) music.togglePlayback() else requestOrPlay(music::togglePlayback) },
             onPrevious = music::previous,
             onNext = music::next,
             onSeek = music::seekTo,
@@ -335,16 +410,55 @@ fun YinYuApp() {
         )
         if (addToPlaylistOpen) AddToPlaylistOverlay(music.playlists, { addToPlaylistOpen = false }, music::addCurrentToPlaylist)
         if (settingsOpen) SettingsScreen(
-            sourceName = music.sourceName,
-            isDark = darkTheme,
+            sourceName = "${music.sourceName} · ${music.songs.size} 首",
+            themeMode = themeMode,
             accentIndex = accentIndex,
+            notificationsEnabled = notificationsEnabled,
+            minimumTrackDurationSeconds = music.minimumTrackDurationSeconds,
+            sleepTimerMinutes = music.sleepTimerMinutes,
+            volumePercent = music.volumePercent,
+            playbackSpeedPercent = music.playbackSpeedPercent,
+            librarySortOrder = librarySortOrder,
+            lyricsAutoFollow = lyricsAutoFollow,
+            lyricsTextSize = lyricsTextSize,
             onThemeChange = { selected ->
-                darkTheme = selected
-                appearancePreferences.edit().putBoolean("dark_theme", selected).apply()
+                themeMode = selected
+                appearancePreferences.edit().putInt("theme_mode", selected).putBoolean("dark_theme", selected != 1).apply()
             },
             onAccentChange = { selected ->
                 accentIndex = selected
                 appearancePreferences.edit().putInt("accent_index", selected).apply()
+            },
+            onManageNotifications = {
+                val runtimeGranted = Build.VERSION.SDK_INT < 33 ||
+                    context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                if (Build.VERSION.SDK_INT >= 33 && !runtimeGranted &&
+                    !notificationPreferences.getBoolean("permission_prompted", false)
+                ) {
+                    notificationPreferences.edit().putBoolean("permission_prompted", true).apply()
+                    notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                } else {
+                    context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                        putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    })
+                }
+            },
+            onMinimumDurationChange = music::setMinimumTrackDuration,
+            onSleepTimerChange = music::setSleepTimer,
+            onVolumeChange = music::updateVolumePercent,
+            onPlaybackSpeedChange = music::updatePlaybackSpeedPercent,
+            onLibrarySortChange = { selected ->
+                librarySortOrder = selected.coerceIn(0, 2)
+                libraryPreferences.edit().putInt("sort_order", librarySortOrder).apply()
+            },
+            onLyricsAutoFollowChange = { enabled ->
+                lyricsAutoFollow = enabled
+                lyricsPreferences.edit().putBoolean("auto_follow", enabled).apply()
+            },
+            onLyricsTextSizeChange = { selected ->
+                lyricsTextSize = selected.coerceIn(0, 2)
+                lyricsPreferences.edit().putInt("text_size", lyricsTextSize).apply()
             },
             onClose = { settingsOpen = false },
             onChooseFolder = { settingsOpen = false; folderPicker.launch(null) },
@@ -784,6 +898,8 @@ private fun LibraryPage(
     artists: List<PreviewArtist>,
     sourceName: String,
     scanning: Boolean,
+    sortOrder: Int,
+    onSortOrderChange: (Int) -> Unit,
     onSearch: () -> Unit,
     onSelectSong: (Int) -> Unit,
     onChooseFolder: () -> Unit,
@@ -793,9 +909,8 @@ private fun LibraryPage(
     var category by rememberSaveable { mutableIntStateOf(0) }
     var selectedGroup by rememberSaveable { mutableStateOf<String?>(null) }
     BackHandler(selectedGroup != null) { selectedGroup = null }
-    var sort by rememberSaveable { mutableIntStateOf(0) }
     val labels = listOf("歌曲", "专辑", "歌手", "文件夹")
-    val sortedSongs = when (sort) {
+    val sortedSongs = when (sortOrder) {
         1 -> songs.sortedByDescending { it.addedAt }
         2 -> songs.sortedByDescending { it.durationSeconds }
         else -> songs.sortedBy { it.title.lowercase() }
@@ -834,8 +949,8 @@ private fun LibraryPage(
             Text(selectedGroup ?: "${labels[category]} · ${if (category == 0) songs.size else groups.size}", color = YinColors.muted, fontSize = 12.sp)
             Spacer(Modifier.weight(1f))
             if (category == 0 || selectedGroup != null) {
-                Text("排序：${listOf("名称", "最近加入", "时长")[sort]}", color = YinColors.lavender, fontSize = 11.sp,
-                    modifier = Modifier.clickable { sort = (sort + 1) % 3 }.padding(5.dp))
+                Text("排序：${listOf("名称", "最近加入", "时长")[sortOrder]}", color = YinColors.lavender, fontSize = 11.sp,
+                    modifier = Modifier.clickable { onSortOrderChange((sortOrder + 1) % 3) }.padding(5.dp))
             }
         }
         LazyColumn(modifier = Modifier.weight(1f), contentPadding = PaddingValues(bottom = 112.dp)) {

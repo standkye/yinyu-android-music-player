@@ -2,9 +2,12 @@ package com.example.yinyu.ui
 
 import android.content.ComponentName
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.util.LruCache
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -19,14 +22,17 @@ import com.example.yinyu.data.MusicCatalog
 import com.example.yinyu.data.MusicDatabase
 import com.example.yinyu.data.SavedPlaylist
 import com.example.yinyu.playback.MusicPlaybackService
+import com.example.yinyu.R
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 import java.util.concurrent.Executor
 
 /** Compose-facing state. Playback is owned by MusicPlaybackService, never by an Activity. */
@@ -34,11 +40,18 @@ internal class MusicAppController(context: Context) : Player.Listener {
     private val appContext = context.applicationContext
     private val catalog = MusicCatalog(appContext)
     private val database = MusicDatabase(appContext)
+    private val settings = appContext.getSharedPreferences("music_settings", Context.MODE_PRIVATE)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val mainExecutor = Executor { Handler(Looper.getMainLooper()).post(it) }
     private var future: ListenableFuture<MediaController>? = null
     private var player: MediaController? = null
     private var pendingQueue: Pair<List<PreviewSong>, Int>? = null
+    private var notificationArtworkJob: Job? = null
+    private var notificationArtworkRequestId: String? = null
+    private var sleepTimerJob: Job? = null
+    private val notificationArtworkCache = object : LruCache<String, ByteArray>(2 * 1024) {
+        override fun sizeOf(key: String, value: ByteArray): Int = (value.size / 1024).coerceAtLeast(1)
+    }
 
     var songs by mutableStateOf<List<PreviewSong>>(emptyList())
         private set
@@ -74,6 +87,14 @@ internal class MusicAppController(context: Context) : Player.Listener {
         private set
     var recentIds by mutableStateOf<List<String>>(emptyList())
         private set
+    var minimumTrackDurationSeconds by mutableIntStateOf(settings.getInt("minimum_track_duration_seconds", 0))
+        private set
+    var sleepTimerMinutes by mutableIntStateOf(0)
+        private set
+    var volumePercent by mutableIntStateOf(settings.getInt("volume_percent", 100).coerceIn(0, 100))
+        private set
+    var playbackSpeedPercent by mutableIntStateOf(settings.getInt("playback_speed_percent", 100).coerceIn(50, 200))
+        private set
 
     val currentSong: PreviewSong?
         get() = songs.getOrNull(currentIndex)
@@ -97,6 +118,14 @@ internal class MusicAppController(context: Context) : Player.Listener {
             connection.addListener({
                 try {
                     player = connection.get().also { it.addListener(this) }
+                    player?.let { connected ->
+                        if (connected.isCommandAvailable(Player.COMMAND_SET_VOLUME)) {
+                            connected.setVolume(volumePercent / 100f)
+                        }
+                        if (connected.isCommandAvailable(Player.COMMAND_SET_SPEED_AND_PITCH)) {
+                            connected.setPlaybackSpeed(playbackSpeedPercent / 100f)
+                        }
+                    }
                     ready = true
                     updateFromPlayer()
                     pendingQueue?.let { (items, index) -> pendingQueue = null; playQueue(items, index) }
@@ -128,7 +157,7 @@ internal class MusicAppController(context: Context) : Player.Listener {
             scanning = true
             error = null
             try {
-                val result = catalog.scan()
+                val result = catalog.scan(minimumTrackDurationSeconds)
                 songs = result.songs
                 artistPictures = result.artistPictures
                 sourceName = result.sourceName
@@ -147,6 +176,48 @@ internal class MusicAppController(context: Context) : Player.Listener {
                 error = "扫描失败：${exception.localizedMessage.orEmpty()}"
             } finally {
                 scanning = false
+            }
+        }
+    }
+
+    fun setMinimumTrackDuration(seconds: Int) {
+        val normalized = seconds.coerceIn(0, 120)
+        if (minimumTrackDurationSeconds == normalized) return
+        minimumTrackDurationSeconds = normalized
+        settings.edit().putInt("minimum_track_duration_seconds", normalized).apply()
+        scan()
+    }
+
+    fun setSleepTimer(minutes: Int) {
+        sleepTimerJob?.cancel()
+        sleepTimerJob = null
+        val normalized = minutes.coerceIn(0, 180)
+        sleepTimerMinutes = normalized
+        if (normalized == 0) return
+        sleepTimerJob = scope.launch {
+            delay(normalized * 60_000L)
+            player?.pause()
+            sleepTimerMinutes = 0
+            sleepTimerJob = null
+        }
+    }
+
+    fun updateVolumePercent(percent: Int) {
+        val normalized = percent.coerceIn(0, 100)
+        volumePercent = normalized
+        settings.edit().putInt("volume_percent", normalized).apply()
+        player?.let { connected ->
+            if (connected.isCommandAvailable(Player.COMMAND_SET_VOLUME)) connected.setVolume(normalized / 100f)
+        }
+    }
+
+    fun updatePlaybackSpeedPercent(percent: Int) {
+        val normalized = percent.coerceIn(50, 200)
+        playbackSpeedPercent = normalized
+        settings.edit().putInt("playback_speed_percent", normalized).apply()
+        player?.let { connected ->
+            if (connected.isCommandAvailable(Player.COMMAND_SET_SPEED_AND_PITCH)) {
+                connected.setPlaybackSpeed(normalized / 100f)
             }
         }
     }
@@ -182,6 +253,7 @@ internal class MusicAppController(context: Context) : Player.Listener {
         val items = validSongs.mapNotNull { item -> item.uri?.let { item.toMediaItem(it) } }
         if (items.isEmpty()) return
         controller.setMediaItems(items, queueIndex.coerceAtLeast(0), 0L)
+        updateNotificationArtwork(controller.currentMediaItem)
         controller.prepare()
         controller.play()
         queueSongs = validSongs
@@ -279,6 +351,7 @@ internal class MusicAppController(context: Context) : Player.Listener {
     override fun onEvents(player: Player, events: Player.Events) = updateFromPlayer()
 
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+        updateNotificationArtwork(mediaItem)
         mediaItem?.mediaId?.let { id ->
             scope.launch {
                 val stableId = songs.firstOrNull { it.uri?.toString() == id }?.storageId ?: id
@@ -314,11 +387,77 @@ internal class MusicAppController(context: Context) : Player.Listener {
             ?: currentSong?.durationSeconds?.times(1_000L) ?: 0L
     }
 
+    /** Supplies a compact, self-contained cover so Android System UI can render local-file art reliably. */
+    private fun updateNotificationArtwork(mediaItem: MediaItem?) {
+        val id = mediaItem?.mediaId ?: return
+        if (mediaItem.mediaMetadata.artworkData != null || notificationArtworkRequestId == id) return
+        val song = songs.firstOrNull { it.uri?.toString() == id } ?: return
+        notificationArtworkRequestId = id
+        notificationArtworkJob?.cancel()
+        notificationArtworkJob = scope.launch {
+            val artworkData = withContext(Dispatchers.IO) {
+                notificationArtworkCache.get(id) ?: runCatching {
+                    val cover = loadArtwork(appContext, song.artworkUri, song.uri)
+                        ?: renderNotificationFallback()
+                    cover?.let(::encodeNotificationArtwork)
+                }.getOrNull()?.also { notificationArtworkCache.put(id, it) }
+            }
+            if (notificationArtworkRequestId == id) notificationArtworkRequestId = null
+            if (artworkData == null) return@launch
+            val controller = player ?: return@launch
+            if (controller.currentMediaItem?.mediaId != id ||
+                !controller.isCommandAvailable(Player.COMMAND_CHANGE_MEDIA_ITEMS)
+            ) return@launch
+            val index = controller.currentMediaItemIndex
+            val current = controller.getMediaItemAt(index)
+            if (current.mediaId != id || current.mediaMetadata.artworkData != null) return@launch
+            val metadata = MediaMetadata.Builder()
+                .setTitle(current.mediaMetadata.title ?: song.title)
+                .setDisplayTitle(current.mediaMetadata.displayTitle ?: song.title)
+                .setArtist(current.mediaMetadata.artist ?: song.artist)
+                .setAlbumTitle(current.mediaMetadata.albumTitle ?: song.album)
+                .setArtworkUri(current.mediaMetadata.artworkUri ?: song.artworkUri)
+                .setArtworkData(artworkData, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
+                .build()
+            controller.replaceMediaItem(index, current.buildUpon().setMediaMetadata(metadata).build())
+        }
+    }
+
+    private fun renderNotificationFallback(): Bitmap? {
+        val drawable = appContext.getDrawable(R.drawable.notification_artwork_fallback) ?: return null
+        val bitmap = Bitmap.createBitmap(512, 512, Bitmap.Config.ARGB_8888)
+        drawable.setBounds(0, 0, bitmap.width, bitmap.height)
+        drawable.draw(Canvas(bitmap))
+        return bitmap
+    }
+
+    private fun encodeNotificationArtwork(bitmap: Bitmap): ByteArray? {
+        val ratio = minOf(512f / bitmap.width, 512f / bitmap.height, 1f)
+        val scaled = if (ratio < 1f) {
+            Bitmap.createScaledBitmap(
+                bitmap,
+                (bitmap.width * ratio).toInt().coerceAtLeast(1),
+                (bitmap.height * ratio).toInt().coerceAtLeast(1),
+                true,
+            )
+        } else bitmap
+        return try {
+            ByteArrayOutputStream().use { output ->
+                if (scaled.compress(Bitmap.CompressFormat.JPEG, 88, output)) output.toByteArray() else null
+            }
+        } finally {
+            if (scaled !== bitmap) scaled.recycle()
+        }
+    }
+
     private fun PreviewSong.toMediaItem(uri: Uri): MediaItem {
         val metadata = MediaMetadata.Builder()
             .setTitle(title)
+            .setDisplayTitle(title)
             .setArtist(artist)
             .setAlbumTitle(album)
+            .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
+            .setIsPlayable(true)
             .apply { artworkUri?.let(::setArtworkUri) }
             .build()
         return MediaItem.Builder()
