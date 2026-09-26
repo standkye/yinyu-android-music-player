@@ -1,0 +1,17 @@
+.gradle/
+.kotlin/
+.idea/
+build/
+app/build/
+local.properties
+*.iml
+captures/
+*.jks
+*.keystore
+/*.png
+/*.jpg
+/*.jpeg
+/*.webp
+/*.mp4
+/*.apk
+/*.aab
