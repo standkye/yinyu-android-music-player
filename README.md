@@ -5,6 +5,10 @@
 
 [简体中文](#简体中文) · [English](#english) · [日本語](#日本語) · [한국어](#한국어)
 
+**🌐 项目展示页 / Project showcase:** [静态网页源码 `docs/index.html`](docs/index.html) · [应用截图](docs/screenshots/)
+
+> 网页使用本地截图素材，无外部依赖。GitHub README 不会运行内嵌网页；如需独立在线网址，需要单独启用网站托管。
+
 ## 界面展示 · Screenshots
 
 <div align="center">

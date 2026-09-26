@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b0a0f">
+  <meta name="description" content="音屿 YinYu：一款只属于你的 Android 本地音乐播放器。无账号、无联网、无广告。">
+  <title>音屿 YinYu — 本地音乐，自有节奏</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b0a0f;
+      --surface: #141219;
+      --surface-2: #1b1822;
+      --text: #f7f4fa;
+      --muted: #aaa3b3;
+      --soft: #797383;
+      --accent: #bca4ea;
+      --accent-2: #e2d2a4;
+      --line: rgba(255,255,255,.105);
+      --max: 1200px;
+      --radius: 28px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; scroll-padding-top: 100px; }
+    body {
+      margin: 0;
+      color: var(--text);
+      background:
+        radial-gradient(ellipse at 76% 13%, color-mix(in srgb, var(--accent) 13%, transparent), transparent 34rem),
+        radial-gradient(ellipse at 12% 48%, rgba(111, 81, 132, .09), transparent 32rem),
+        var(--bg);
+      font-family: Inter, "SF Pro Display", "Segoe UI", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+    a { color: inherit; text-decoration: none; }
+    button { color: inherit; font: inherit; }
+    figure { margin: 0; }
+    ::selection { color: #100e14; background: var(--accent); }
+
+    .noise {
+      position: fixed;
+      z-index: 10;
+      inset: 0;
+      pointer-events: none;
+      opacity: .035;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.88' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E");
+    }
+    .wrap { width: min(var(--max), calc(100% - 56px)); margin: 0 auto; }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 750;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+    }
+    .eyebrow::before { width: 18px; height: 1px; background: var(--accent); content: ""; }
+    .section { padding: 120px 0; border-top: 1px solid var(--line); }
+    .section-head { display: flex; align-items: end; justify-content: space-between; gap: 30px; margin-bottom: 48px; }
+    .section-head h2 {
+      max-width: 700px;
+      margin: 15px 0 0;
+      font-size: clamp(40px, 6vw, 76px);
+      font-weight: 650;
+      letter-spacing: -.075em;
+      line-height: .96;
+    }
+    .section-head p { max-width: 330px; margin: 0 0 4px; color: var(--muted); font-size: 14px; line-height: 1.75; }
+
+    .topbar {
+      position: sticky;
+      z-index: 30;
+      top: 0;
+      border-bottom: 1px solid rgba(255,255,255,.07);
+      background: rgba(11,10,15,.76);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+    }
+    .nav { min-height: 76px; display: flex; align-items: center; justify-content: space-between; gap: 28px; }
+    .brand { display: inline-flex; align-items: center; gap: 12px; flex: 0 0 auto; }
+    .brand-mark {
+      display: grid;
+      width: 38px;
+      height: 38px;
+      place-items: center;
+      border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+      border-radius: 13px;
+      background: color-mix(in srgb, var(--accent) 13%, #17141d);
+      color: var(--accent);
+    }
+    .brand-mark svg { width: 23px; height: 23px; }
+    .brand-name { font-size: 15px; font-weight: 800; letter-spacing: .04em; }
+    .brand-sub { display: block; margin-top: 3px; color: var(--soft); font-size: 9px; font-weight: 650; letter-spacing: .12em; }
+    .nav-links { display: flex; align-items: center; gap: clamp(15px, 2.3vw, 34px); color: #c2bdc9; font-size: 11px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+    .nav-links a { transition: color .2s ease; }
+    .nav-links a:hover { color: var(--accent); }
+    .nav-download, .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      min-height: 45px;
+      padding: 0 19px;
+      border: 1px solid transparent;
+      border-radius: 999px;
+      background: var(--accent);
+      color: #17121f;
+      font-size: 12px;
+      font-weight: 800;
+      transition: transform .2s ease, box-shadow .2s ease, background .25s ease;
+    }
+    .nav-download:hover, .button:hover { transform: translateY(-2px); box-shadow: 0 12px 36px color-mix(in srgb, var(--accent) 25%, transparent); }
+    .button.secondary { border-color: var(--line); background: rgba(255,255,255,.035); color: var(--text); }
+    .button svg, .nav-download svg { width: 15px; height: 15px; }
+
+    .hero { position: relative; min-height: 710px; padding: 92px 0 104px; display: flex; align-items: center; }
+    .hero-grid { display: grid; grid-template-columns: .94fr 1.06fr; align-items: center; gap: 38px; }
+    .hero-copy { position: relative; z-index: 3; padding: 26px 0; }
+    .hero-kicker { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 11px; font-weight: 750; letter-spacing: .16em; text-transform: uppercase; }
+    .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 18px var(--accent); }
+    .hero h1 { margin: 31px 0 25px; font-size: clamp(68px, 9.5vw, 132px); font-weight: 720; letter-spacing: -.095em; line-height: .96; }
+    .hero h1 span { display: block; }
+    .hero h1 .stroke { color: transparent; -webkit-text-stroke: 1px rgba(255,255,255,.52); }
+    .hero h1 .accent-word { color: var(--accent); }
+    .hero-description { max-width: 465px; color: #b3adba; font-size: 16px; line-height: 1.8; }
+    .hero-description strong { color: var(--text); font-weight: 650; }
+    .hero-actions { display: flex; flex-wrap: wrap; gap: 11px; margin-top: 29px; }
+    .hero-stats { display: flex; flex-wrap: wrap; gap: 27px; margin-top: 43px; }
+    .stat { padding-left: 13px; border-left: 1px solid color-mix(in srgb, var(--accent) 65%, transparent); }
+    .stat strong { display: block; font-size: 17px; font-weight: 760; letter-spacing: -.04em; }
+    .stat span { display: block; margin-top: 5px; color: var(--soft); font-size: 9px; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
+
+    .hero-stage { position: relative; min-height: 560px; perspective: 1100px; isolation: isolate; }
+    .hero-glow { position: absolute; inset: 14% 9% 8%; z-index: -1; border-radius: 50%; background: radial-gradient(ellipse, color-mix(in srgb, var(--accent) 24%, transparent), transparent 68%); filter: blur(40px); }
+    .phone {
+      position: absolute;
+      overflow: hidden;
+      width: min(47%, 284px);
+      aspect-ratio: 1080 / 2400;
+      border: 6px solid #27242e;
+      border-radius: 35px;
+      background: #17151d;
+      box-shadow: 0 36px 90px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.12), inset 0 0 0 1px rgba(255,255,255,.16);
+      transition: transform .6s cubic-bezier(.2,.8,.2,1), box-shadow .4s ease;
+    }
+    .phone img { display: block; width: 100%; height: 100%; object-fit: cover; }
+    .phone-home { top: 34px; left: 10%; transform: rotate(-8deg) translateZ(0); }
+    .phone-player { top: 4px; right: 8%; transform: rotate(7deg) translateY(31px) translateZ(50px); }
+    .hero-stage:hover .phone-home { transform: rotate(-5deg) translateY(-9px) translateZ(0); }
+    .hero-stage:hover .phone-player { transform: rotate(4deg) translateY(18px) translateZ(50px); }
+    .float-chip { position: absolute; z-index: 4; display: inline-flex; align-items: center; gap: 9px; padding: 11px 14px; border: 1px solid rgba(255,255,255,.16); border-radius: 999px; background: rgba(27,24,34,.82); box-shadow: 0 15px 44px rgba(0,0,0,.28); color: #ebe6f1; font-size: 10px; font-weight: 760; letter-spacing: .08em; backdrop-filter: blur(14px); }
+    .float-chip svg { width: 15px; height: 15px; color: var(--accent); }
+    .chip-top { top: 3%; right: 1%; animation: drift 5.5s ease-in-out infinite; }
+    .chip-bottom { right: 0; bottom: 4%; animation: drift 6s ease-in-out -2s infinite; }
+    @keyframes drift { 0%,100% { translate: 0 0; } 50% { translate: 0 -9px; } }
+
+    .feature-section { background: linear-gradient(180deg, rgba(255,255,255,.015), transparent); }
+    .feature-grid { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
+    .feature-card { min-height: 224px; padding: 27px 27px 30px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); background: rgba(255,255,255,.012); transition: background .25s ease, transform .25s ease; }
+    .feature-card:hover { position: relative; z-index: 1; transform: translateY(-3px); background: rgba(255,255,255,.045); }
+    .feature-top { display: flex; align-items: center; justify-content: space-between; color: var(--soft); font-size: 10px; font-weight: 800; letter-spacing: .14em; }
+    .feature-icon { display: grid; width: 40px; height: 40px; place-items: center; border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent); border-radius: 14px; background: color-mix(in srgb, var(--accent) 9%, transparent); color: var(--accent); }
+    .feature-icon svg { width: 19px; height: 19px; }
+    .feature-card h3 { margin: 29px 0 9px; font-size: 17px; font-weight: 720; letter-spacing: -.035em; }
+    .feature-card p { max-width: 300px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.75; }
+
+    .screens-section { overflow: hidden; }
+    .screens-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+    .screen-card { min-width: 0; }
+    .screen-button { position: relative; display: block; width: 100%; padding: 0; overflow: hidden; border: 1px solid rgba(255,255,255,.14); border-radius: 23px; background: #19171d; cursor: zoom-in; box-shadow: 0 18px 42px rgba(0,0,0,.28); }
+    .screen-button img { display: block; width: 100%; aspect-ratio: 1080 / 2400; object-fit: cover; transition: transform .65s cubic-bezier(.2,.8,.2,1), filter .35s ease; }
+    .screen-button:hover img { transform: scale(1.035); filter: saturate(1.07); }
+    .screen-open { position: absolute; right: 13px; bottom: 13px; display: grid; width: 37px; height: 37px; place-items: center; border: 1px solid rgba(255,255,255,.2); border-radius: 50%; background: rgba(12,10,16,.7); color: #fff; opacity: 0; transform: translateY(5px); transition: .2s ease; backdrop-filter: blur(10px); }
+    .screen-button:hover .screen-open, .screen-button:focus-visible .screen-open { opacity: 1; transform: none; }
+    .screen-open svg { width: 17px; height: 17px; }
+    .screen-caption { display: flex; justify-content: space-between; gap: 12px; padding: 15px 2px 0; }
+    .screen-caption strong { font-size: 12px; font-weight: 700; }
+    .screen-caption span { color: var(--soft); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+
+    .palette-section { background: linear-gradient(180deg, transparent, rgba(255,255,255,.018), transparent); }
+    .palette-layout { display: grid; grid-template-columns: .9fr 1.1fr; align-items: center; gap: 8%; }
+    .palette-copy h2 { margin: 16px 0 17px; font-size: clamp(40px, 6vw, 72px); font-weight: 660; letter-spacing: -.078em; line-height: .95; }
+    .palette-copy p { max-width: 420px; color: var(--muted); font-size: 14px; line-height: 1.8; }
+    .palette-options { display: flex; flex-wrap: wrap; gap: 10px; margin: 26px 0 0; padding: 0; list-style: none; }
+    .palette-option { display: inline-flex; align-items: center; gap: 9px; min-height: 41px; padding: 0 13px; border: 1px solid var(--line); border-radius: 999px; background: rgba(255,255,255,.025); color: #d9d4df; font-size: 10px; font-weight: 700; cursor: pointer; transition: border-color .2s ease, background .2s ease, transform .2s ease; }
+    .palette-option:hover, .palette-option[aria-pressed="true"] { transform: translateY(-2px); border-color: color-mix(in srgb, var(--accent) 65%, transparent); background: color-mix(in srgb, var(--accent) 11%, transparent); }
+    .swatch { width: 11px; height: 11px; border-radius: 50%; background: var(--swatch); box-shadow: 0 0 13px color-mix(in srgb, var(--swatch) 60%, transparent); }
+    .palette-preview { position: relative; min-height: 360px; display: grid; place-items: center; overflow: hidden; border: 1px solid var(--line); border-radius: 32px; background: radial-gradient(ellipse at 50% 45%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 58%), #111016; }
+    .preview-orbit { position: absolute; width: min(72%, 320px); aspect-ratio: 1; border: 1px solid color-mix(in srgb, var(--accent) 27%, transparent); border-radius: 50%; box-shadow: 0 0 0 36px rgba(255,255,255,.012), 0 0 0 72px rgba(255,255,255,.009); }
+    .preview-disc { position: relative; display: grid; width: min(47%, 212px); aspect-ratio: 1; place-items: center; border: 1px solid rgba(255,255,255,.15); border-radius: 50%; background: repeating-radial-gradient(circle at center, #27232d 0 2px, #17151c 3px 5px, #211e27 6px 7px); box-shadow: 0 35px 75px rgba(0,0,0,.55), inset 0 0 35px rgba(255,255,255,.045); animation: spin 12s linear infinite; }
+    .preview-disc::before { position: absolute; inset: 34%; border: 8px solid #0e0c11; border-radius: 50%; background: var(--accent); box-shadow: inset 0 0 0 1px rgba(255,255,255,.28); content: ""; }
+    .preview-disc::after { position: absolute; width: 8px; height: 8px; border-radius: 50%; background: #19161f; content: ""; }
+    .preview-label { position: absolute; bottom: 22px; left: 25px; color: #aca6b3; font-size: 9px; font-weight: 760; letter-spacing: .16em; text-transform: uppercase; }
+    .preview-label strong { color: var(--accent); }
+    .preview-status { position: absolute; top: 22px; right: 24px; display: inline-flex; align-items: center; gap: 8px; color: #d6d0dc; font-size: 9px; font-weight: 750; letter-spacing: .13em; text-transform: uppercase; }
+    .preview-status span { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 12px var(--accent); }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .tech-panel { display: grid; grid-template-columns: .82fr 1.18fr; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: linear-gradient(120deg, rgba(255,255,255,.035), rgba(255,255,255,.012)); }
+    .tech-intro { padding: 38px; border-right: 1px solid var(--line); }
+    .tech-intro h2 { margin: 18px 0 14px; font-size: clamp(36px, 5vw, 59px); font-weight: 670; letter-spacing: -.08em; line-height: .97; }
+    .tech-intro p { max-width: 350px; color: var(--muted); font-size: 13px; line-height: 1.8; }
+    .stack-list { display: flex; flex-wrap: wrap; align-content: center; gap: 10px; padding: 38px; }
+    .stack-item { display: inline-flex; align-items: center; gap: 9px; min-height: 42px; padding: 0 14px; border: 1px solid var(--line); border-radius: 999px; background: rgba(0,0,0,.14); color: #d6d1dc; font-size: 11px; font-weight: 680; }
+    .stack-item::before { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); content: ""; }
+
+    .final-cta { position: relative; overflow: hidden; padding: 92px 0 100px; border-top: 1px solid var(--line); text-align: center; }
+    .final-cta::before { position: absolute; top: -240px; left: 50%; width: 650px; height: 480px; border-radius: 50%; background: color-mix(in srgb, var(--accent) 14%, transparent); content: ""; filter: blur(95px); transform: translateX(-50%); pointer-events: none; }
+    .final-cta > * { position: relative; }
+    .final-cta h2 { margin: 19px 0 13px; font-size: clamp(48px, 8vw, 91px); font-weight: 710; letter-spacing: -.085em; line-height: .92; }
+    .final-cta p { margin: 0 auto; color: var(--muted); font-size: 14px; line-height: 1.7; }
+    .final-cta .button { margin-top: 27px; }
+    footer { border-top: 1px solid var(--line); }
+    .footer-inner { min-height: 78px; display: flex; align-items: center; justify-content: space-between; gap: 20px; color: var(--soft); font-size: 10px; }
+    .footer-links { display: flex; gap: 18px; }
+    .footer-links a:hover { color: var(--text); }
+
+    [data-reveal] { opacity: 0; transform: translateY(18px); transition: opacity .65s ease, transform .65s cubic-bezier(.2,.75,.25,1); }
+    [data-reveal].is-visible { opacity: 1; transform: none; }
+    dialog { width: min(92vw, 520px); max-height: 92vh; padding: 0; overflow: hidden; border: 1px solid rgba(255,255,255,.22); border-radius: 22px; background: #100e13; box-shadow: 0 30px 100px rgba(0,0,0,.7); }
+    dialog::backdrop { background: rgba(4,3,6,.82); backdrop-filter: blur(7px); }
+    dialog img { display: block; width: auto; max-width: 100%; height: min(86vh, 1024px); margin: 0 auto; object-fit: contain; }
+    .dialog-close { position: sticky; z-index: 1; top: 10px; float: right; display: grid; width: 39px; height: 39px; margin: 10px 10px -49px 0; place-items: center; border: 1px solid rgba(255,255,255,.22); border-radius: 50%; background: rgba(12,10,16,.8); color: white; cursor: pointer; }
+
+    @media (max-width: 900px) {
+      .wrap { width: min(100% - 40px, 700px); }
+      .hero { min-height: 0; padding: 76px 0 86px; }
+      .hero-grid { grid-template-columns: 1fr; gap: 12px; }
+      .hero-copy { padding-bottom: 0; }
+      .hero h1 { max-width: 720px; font-size: clamp(70px, 15vw, 124px); }
+      .hero-stage { width: min(100%, 650px); min-height: 560px; margin: 0 auto; }
+      .phone { width: min(42%, 255px); }
+      .phone-home { left: 14%; }
+      .phone-player { right: 14%; }
+      .feature-grid { grid-template-columns: repeat(2, 1fr); }
+      .screens-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px 16px; }
+      .palette-layout { grid-template-columns: 1fr; gap: 30px; }
+      .palette-preview { min-height: 330px; }
+    }
+    @media (max-width: 620px) {
+      .wrap { width: calc(100% - 32px); }
+      .nav { min-height: 66px; gap: 14px; }
+      .brand { gap: 9px; }
+      .brand-mark { width: 34px; height: 34px; }
+      .brand-name { font-size: 13px; }
+      .brand-sub { font-size: 8px; }
+      .nav-links { order: 3; width: 100%; justify-content: space-between; gap: 10px; padding: 0 0 13px; font-size: 9px; }
+      .nav { flex-wrap: wrap; padding-top: 11px; }
+      .nav-download { min-height: 36px; padding: 0 13px; font-size: 10px; }
+      .nav-download svg { width: 13px; height: 13px; }
+      .hero { padding: 58px 0 70px; }
+      .hero h1 { margin: 26px 0 19px; font-size: clamp(62px, 17vw, 94px); }
+      .hero-description { font-size: 14px; }
+      .hero-stats { gap: 17px; margin-top: 30px; }
+      .stat strong { font-size: 15px; }
+      .stat span { font-size: 8px; }
+      .hero-stage { min-height: 420px; margin-top: 4px; }
+      .phone { width: 43%; border-width: 4px; border-radius: 25px; }
+      .phone-home { top: 30px; left: 10%; }
+      .phone-player { top: 4px; right: 9%; transform: rotate(7deg) translateY(24px); }
+      .chip-top { top: 0; right: -1%; }
+      .chip-bottom { right: -1%; bottom: 0; }
+      .float-chip { padding: 9px 11px; font-size: 8px; }
+      .section { padding: 82px 0; }
+      .section-head { display: block; margin-bottom: 30px; }
+      .section-head h2 { margin-top: 13px; font-size: clamp(41px, 12vw, 58px); }
+      .section-head p { margin-top: 15px; font-size: 12px; }
+      .feature-grid { grid-template-columns: 1fr 1fr; }
+      .feature-card { min-height: 202px; padding: 18px 15px 20px; }
+      .feature-card h3 { margin-top: 24px; font-size: 14px; }
+      .feature-card p { font-size: 11px; }
+      .feature-icon { width: 35px; height: 35px; border-radius: 12px; }
+      .screens-grid { gap: 19px 11px; }
+      .screen-button { border-radius: 16px; }
+      .screen-caption { display: block; padding-top: 10px; }
+      .screen-caption strong, .screen-caption span { display: block; }
+      .screen-caption strong { font-size: 10px; }
+      .screen-caption span { margin-top: 4px; font-size: 8px; }
+      .palette-preview { min-height: 275px; border-radius: 24px; }
+      .palette-options { gap: 7px; }
+      .palette-option { min-height: 37px; padding: 0 10px; font-size: 9px; }
+      .tech-panel { grid-template-columns: 1fr; border-radius: 22px; }
+      .tech-intro { padding: 26px; border-right: 0; border-bottom: 1px solid var(--line); }
+      .tech-intro h2 { font-size: 47px; }
+      .stack-list { gap: 8px; padding: 24px; }
+      .stack-item { min-height: 37px; padding: 0 11px; font-size: 9px; }
+      .final-cta { padding: 76px 0 80px; }
+      .final-cta h2 { font-size: clamp(47px, 13vw, 70px); }
+      .final-cta p { max-width: 300px; font-size: 12px; }
+      .footer-inner { min-height: 75px; align-items: flex-start; flex-direction: column; justify-content: center; gap: 8px; padding: 16px 0; }
+      .footer-links { gap: 14px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+      [data-reveal] { opacity: 1; transform: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="noise" aria-hidden="true"></div>
+  <header class="topbar">
+    <nav class="nav wrap" aria-label="主导航">
+      <a class="brand" href="#top" aria-label="音屿首页">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" fill="none"><path d="M3 17.5c3.1 0 3.2-7 6.3-7s3.1 12 6.2 12 3.2-16 6.4-16 3.1 11 7.1 11" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/></svg>
+        </span>
+        <span><span class="brand-name">音屿 YINYU</span><span class="brand-sub">ANDROID LOCAL PLAYER</span></span>
+      </a>
+      <div class="nav-links">
+        <a href="#experience">体验</a><a href="#screenshots">界面</a><a href="#palette">主题</a><a href="#technology">技术</a>
+      </div>
+      <a class="nav-download" href="https://github.com/standkye/yinyu-android-music-player/releases/tag/v1.0.0" target="_blank" rel="noreferrer">
+        获取 v1.0.0 <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M5 15 15 5M6 5h9v9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div class="wrap hero-grid">
+        <div class="hero-copy" data-reveal>
+          <div class="hero-kicker"><i class="live-dot" aria-hidden="true"></i> ANDROID · 本地音乐播放器</div>
+          <h1><span>把音乐</span><span class="stroke">留给</span><span class="accent-word">自己。</span></h1>
+          <p class="hero-description"><strong>不需要账号，不连接网络，也没有广告。</strong><br>让你自己的音乐、封面和歌词，成为播放器的全部主角。</p>
+          <div class="hero-actions">
+            <a class="button" href="#screenshots">探索音屿 <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 10h11m-5-5 5 5-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+            <a class="button secondary" href="https://github.com/standkye/yinyu-android-music-player" target="_blank" rel="noreferrer">查看 GitHub</a>
+          </div>
+          <div class="hero-stats" aria-label="产品特点">
+            <div class="stat"><strong>100%</strong><span>仅限本地播放</span></div>
+            <div class="stat"><strong>5 palettes</strong><span>可选主题色</span></div>
+            <div class="stat"><strong>Android 8+</strong><span>即装即听</span></div>
+          </div>
+        </div>
+
+        <div class="hero-stage" aria-label="音屿应用界面预览">
+          <div class="hero-glow" aria-hidden="true"></div>
+          <figure class="phone phone-home"><img src="screenshots/home-dark.png" alt="音屿深色主题首页，展示继续播放、专辑与歌手"></figure>
+          <figure class="phone phone-player"><img src="screenshots/player-dark.png" alt="音屿深色全屏播放页，展示封面、播放控制与进度条"></figure>
+          <div class="float-chip chip-top"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 2.4 12.3 7.7 18 8.2 13.7 12 15 17.6 10 14.7 5 17.6 6.3 12 2 8.2l5.7-.5L10 2.4Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg> YOUR LIBRARY, YOUR RULES</div>
+          <div class="float-chip chip-bottom"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 5.5h12M4 10h12M4 14.5h8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg> OFFLINE BY DESIGN</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section feature-section" id="experience">
+      <div class="wrap">
+        <div class="section-head" data-reveal>
+          <div><span class="eyebrow">THE LISTENING EXPERIENCE</span><h2>简单，刚好够用。</h2></div>
+          <p>从扫描曲库到锁屏控制，每个细节都围绕一件事：让你更自在地听自己的音乐。</p>
+        </div>
+        <div class="feature-grid">
+          <article class="feature-card" data-reveal><div class="feature-top"><span>01 / LIBRARY</span><span class="feature-icon"><svg viewBox="0 0 24 24" fill="none"><path d="M4 5h16v14H4zM8 9h8M8 13h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span></div><h3>你的本地曲库</h3><p>扫描手机音乐，也可授权文件夹。歌曲、专辑、歌手与文件夹，按你熟悉的方式浏览。</p></article>
+          <article class="feature-card" data-reveal><div class="feature-top"><span>02 / PLAYBACK</span><span class="feature-icon"><svg viewBox="0 0 24 24" fill="none"><path d="M8 5.5v13l10-6.5-10-6.5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg></span></div><h3>一路播放，不被打断</h3><p>后台播放、通知栏与锁屏控制都已就位；拔下耳机，音乐自动暂停。</p></article>
+          <article class="feature-card" data-reveal><div class="feature-top"><span>03 / COLLECTION</span><span class="feature-icon"><svg viewBox="0 0 24 24" fill="none"><path d="M20.8 8.8c0 5.3-8.8 10.2-8.8 10.2S3.2 14.1 3.2 8.8A4.4 4.4 0 0 1 12 7.3a4.4 4.4 0 0 1 8.8 1.5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg></span></div><h3>收藏与歌单</h3><p>把喜欢的歌收好，建立自己的歌单，随时从最近播放继续。</p></article>
+          <article class="feature-card" data-reveal><div class="feature-top"><span>04 / LYRICS</span><span class="feature-icon"><svg viewBox="0 0 24 24" fill="none"><path d="M5 7h14M5 12h10M5 17h7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span></div><h3>歌词跟着歌曲走</h3><p>读取同目录 LRC 歌词，在全屏播放页里安静地看词、听歌。</p></article>
+          <article class="feature-card" data-reveal><div class="feature-top"><span>05 / COLOR</span><span class="feature-icon"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3a9 9 0 1 0 0 18h1.1a2 2 0 0 0 1.5-3.3 1.8 1.8 0 0 1 1.4-3h1.2A3.8 3.8 0 0 0 21 10.9C21 6.5 17 3 12 3Z" stroke="currentColor" stroke-width="1.7"/><path d="M7.5 10h.1m3-3h.1m4 1h.1" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></span></div><h3>封面带来色彩</h3><p>从当前专辑封面提取色调，让播放页背景随音乐自然变化。</p></article>
+          <article class="feature-card" data-reveal><div class="feature-top"><span>06 / PRIVATE</span><span class="feature-icon"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3 19 6v5c0 4.5-2.8 7.8-7 10-4.2-2.2-7-5.5-7-10V6l7-3Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="m9 12 2 2 4-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span></div><h3>音乐只留在手机里</h3><p>无需账号和网络；应用不申请互联网权限，也没有广告。</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section screens-section" id="screenshots">
+      <div class="wrap">
+        <div class="section-head" data-reveal>
+          <div><span class="eyebrow">A CLOSER LOOK</span><h2>每一屏，都为音乐留白。</h2></div>
+          <p>深色沉浸，浅色清透。点击任意截图，可展开查看细节。</p>
+        </div>
+        <div class="screens-grid">
+          <figure class="screen-card" data-reveal><button class="screen-button" type="button" data-image="screenshots/home-dark.png" aria-label="放大查看深色首页"><img src="screenshots/home-dark.png" alt="音屿深色主题首页"><span class="screen-open" aria-hidden="true"><svg viewBox="0 0 20 20" fill="none"><path d="M8 4H4v4m0-4 5 5m3 7h4v-4m0 4-5-5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span></button><figcaption class="screen-caption"><strong>首页 · 深色</strong><span>HOME / DARK</span></figcaption></figure>
+          <figure class="screen-card" data-reveal><button class="screen-button" type="button" data-image="screenshots/home-light.png" aria-label="放大查看浅色首页"><img src="screenshots/home-light.png" alt="音屿浅色主题首页"><span class="screen-open" aria-hidden="true"><svg viewBox="0 0 20 20" fill="none"><path d="M8 4H4v4m0-4 5 5m3 7h4v-4m0 4-5-5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span></button><figcaption class="screen-caption"><strong>首页 · 浅色</strong><span>HOME / LIGHT</span></figcaption></figure>
+          <figure class="screen-card" data-reveal><button class="screen-button" type="button" data-image="screenshots/player-dark.png" aria-label="放大查看深色播放页"><img src="screenshots/player-dark.png" alt="音屿深色全屏播放页"><span class="screen-open" aria-hidden="true"><svg viewBox="0 0 20 20" fill="none"><path d="M8 4H4v4m0-4 5 5m3 7h4v-4m0 4-5-5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span></button><figcaption class="screen-caption"><strong>播放页 · 深色</strong><span>PLAYER / DARK</span></figcaption></figure>
+          <figure class="screen-card" data-reveal><button class="screen-button" type="button" data-image="screenshots/player-light.png" aria-label="放大查看浅色播放页"><img src="screenshots/player-light.png" alt="音屿浅色全屏播放页"><span class="screen-open" aria-hidden="true"><svg viewBox="0 0 20 20" fill="none"><path d="M8 4H4v4m0-4 5 5m3 7h4v-4m0 4-5-5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span></button><figcaption class="screen-caption"><strong>播放页 · 浅色</strong><span>PLAYER / LIGHT</span></figcaption></figure>
+        </div>
+      </div>
+    </section>
+
+    <section class="section palette-section" id="palette">
+      <div class="wrap palette-layout">
+        <div class="palette-copy" data-reveal>
+          <span class="eyebrow">COLOR, YOUR WAY</span>
+          <h2>换个颜色，<br>换种心情。</h2>
+          <p>深色或浅色，搭配你喜欢的主题色。试着切换下方色板，看看音屿的色彩氛围如何变化。</p>
+          <ul class="palette-options" aria-label="主题色预览">
+            <li><button class="palette-option" type="button" data-accent="lavender" aria-pressed="true"><i class="swatch" style="--swatch:#BCA4EA"></i>雾紫</button></li>
+            <li><button class="palette-option" type="button" data-accent="sunset" aria-pressed="false"><i class="swatch" style="--swatch:#E9B769"></i>日落金</button></li>
+            <li><button class="palette-option" type="button" data-accent="ice" aria-pressed="false"><i class="swatch" style="--swatch:#86C9DA"></i>冰川蓝</button></li>
+            <li><button class="palette-option" type="button" data-accent="neon" aria-pressed="false"><i class="swatch" style="--swatch:#E89ABC"></i>玫瑰粉</button></li>
+            <li><button class="palette-option" type="button" data-accent="forest" aria-pressed="false"><i class="swatch" style="--swatch:#9AC7A1"></i>森林绿</button></li>
+          </ul>
+        </div>
+        <div class="palette-preview" data-reveal aria-label="唱片旋转主题色预览">
+          <div class="preview-orbit" aria-hidden="true"></div><div class="preview-disc" aria-hidden="true"></div>
+          <div class="preview-status"><span></span> COLOR PREVIEW</div>
+          <div class="preview-label">MOOD IN MOTION · <strong id="palette-name">雾紫</strong></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="technology">
+      <div class="wrap">
+        <div class="tech-panel" data-reveal>
+          <div class="tech-intro"><span class="eyebrow">UNDER THE HOOD</span><h2>轻盈的界面，<br>扎实的底层。</h2><p>用 Android 原生能力读取音乐与管理播放，把流畅、可靠和离线体验放在同一条链路里。</p></div>
+          <div class="stack-list" aria-label="技术栈">
+            <span class="stack-item">Kotlin</span><span class="stack-item">Jetpack Compose</span><span class="stack-item">Material 3</span><span class="stack-item">AndroidX Media3</span><span class="stack-item">ExoPlayer</span><span class="stack-item">MediaSessionService</span><span class="stack-item">SQLite</span><span class="stack-item">MediaStore</span><span class="stack-item">Haze</span><span class="stack-item">Android 8.0+</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="final-cta">
+      <span class="eyebrow">YOUR MUSIC, YOUR SPACE</span>
+      <h2>准备好听歌了吗？</h2>
+      <p>把 `E:\MyMusic` 放进手机，打开音屿，接着播放。</p>
+      <a class="button" href="https://github.com/standkye/yinyu-android-music-player/releases/tag/v1.0.0" target="_blank" rel="noreferrer">下载音屿 v1.0.0 <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 3v9m0 0 3.5-3.5M10 12 6.5 8.5M4 15.5h12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+    </section>
+  </main>
+
+  <footer><div class="wrap footer-inner"><span>© 2026 音屿 YINYU · Android Local Music Player</span><div class="footer-links"><a href="https://github.com/standkye/yinyu-android-music-player" target="_blank" rel="noreferrer">GitHub</a><a href="https://github.com/standkye/yinyu-android-music-player/releases/tag/v1.0.0" target="_blank" rel="noreferrer">v1.0.0 Release</a><a href="#top">回到顶部 ↑</a></div></div></footer>
+
+  <dialog id="image-dialog" aria-label="截图预览"><button class="dialog-close" type="button" aria-label="关闭预览">✕</button><img id="dialog-image" alt="应用界面截图放大预览"></dialog>
+  <script>
+    (() => {
+      const accents = {
+        lavender: ["#BCA4EA", "#E2D2A4", "雾紫"],
+        sunset: ["#E9B769", "#DB8A73", "日落金"],
+        ice: ["#86C9DA", "#ACB8F0", "冰川蓝"],
+        neon: ["#E89ABC", "#B4A1EE", "玫瑰粉"],
+        forest: ["#9AC7A1", "#C7D49A", "森林绿"],
+      };
+
+      document.querySelectorAll("[data-accent]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const [accent, secondary, name] = accents[button.dataset.accent];
+          document.documentElement.style.setProperty("--accent", accent);
+          document.documentElement.style.setProperty("--accent-2", secondary);
+          document.querySelector("#palette-name").textContent = name;
+          document.querySelectorAll("[data-accent]").forEach((item) => item.setAttribute("aria-pressed", String(item === button)));
+        });
+      });
+
+      const dialog = document.querySelector("#image-dialog");
+      const dialogImage = document.querySelector("#dialog-image");
+      document.querySelectorAll(".screen-button").forEach((button) => {
+        button.addEventListener("click", () => {
+          dialogImage.src = button.dataset.image;
+          dialogImage.alt = button.querySelector("img").alt;
+          dialog.showModal();
+        });
+      });
+      dialog.querySelector(".dialog-close").addEventListener("click", () => dialog.close());
+      dialog.addEventListener("click", (event) => { if (event.target === dialog) dialog.close(); });
+
+      const revealItems = document.querySelectorAll("[data-reveal]");
+      if ("IntersectionObserver" in window && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        const observer = new IntersectionObserver((entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) { entry.target.classList.add("is-visible"); observer.unobserve(entry.target); }
+          });
+        }, { threshold: .12 });
+        revealItems.forEach((item, index) => { item.style.transitionDelay = `${Math.min(index % 4, 3) * 60}ms`; observer.observe(item); });
+      } else {
+        revealItems.forEach((item) => item.classList.add("is-visible"));
+      }
+    })();
+  </script>
+</body>
+</html>
